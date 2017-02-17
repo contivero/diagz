@@ -1,0 +1,51 @@
+name:                diagz
+version:             0.1
+synopsis:            "Diagnostics for gzip"
+-- description:
+homepage:            https://github.com/contivero/diagz#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Cristian Adrián Ontivero <cristianontivero@gmail.com>
+maintainer:          Cristian Adrián Ontivero <cristianontivero@gmail.com>
+copyright:           2017 Cristian Adrián Ontivero
+category:            Compression
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Lib
+  build-depends:       base          >=4.7    && < 5
+                     , bytestring    >=0.10.0 && <0.11
+                     , binary        >=0.8.0  && <0.9
+                     , binary-strict >=0.4.8  && <0.5
+  default-language:    Haskell2010
+
+executable diagz
+  hs-source-dirs:      .
+  main-is:             Main.hs
+  ghc-options:         -O2 -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , bytestring           >=0.10.0 && <0.11
+                     , binary               >=0.8.0  && <0.9
+                     , binary-strict        >=0.4.8  && <0.5
+                     , optparse-applicative >=0.12   && <=0.14
+                     , gitrev               >=1.0.0  && <=1.2.0
+                     , text                 >=1.2    && <1.3
+                     , time                 >=1.6    && <1.7
+                     , diagz
+  default-language:    Haskell2010
+
+test-suite diagz-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , diagz
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: https://github.com/contivero/diagz
