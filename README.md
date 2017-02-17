@@ -1,2 +1,2 @@
-Diagz - Diagnostics for gzip.
+Diagz - Diagnostics for gzip
 ====

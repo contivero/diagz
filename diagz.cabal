@@ -15,11 +15,14 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Lib
-  build-depends:       base          >=4.7    && < 5
-                     , bytestring    >=0.10.0 && <0.11
-                     , binary        >=0.8.0  && <0.9
-                     , binary-strict >=0.4.8  && <0.5
+  exposed-modules:     Diagz
+  build-depends:       base           >=4.7     && < 5
+                     , bytestring     >=0.10.0  && <0.11
+                     , binary         >=0.8.0   && <0.9
+                     , binary-strict  >=0.4.8   && <0.5
+                     , time           >=1.6     && <1.7
+                     , ansi-wl-pprint >=0.6.7.0 && <0.7
+                     , text           >=1.2     && <1.3
   default-language:    Haskell2010
 
 executable diagz
@@ -27,13 +30,14 @@ executable diagz
   main-is:             Main.hs
   ghc-options:         -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
-                     , bytestring           >=0.10.0 && <0.11
-                     , binary               >=0.8.0  && <0.9
-                     , binary-strict        >=0.4.8  && <0.5
-                     , optparse-applicative >=0.12   && <=0.14
-                     , gitrev               >=1.0.0  && <=1.2.0
-                     , text                 >=1.2    && <1.3
-                     , time                 >=1.6    && <1.7
+                     , bytestring           >=0.10.0  && <0.11
+                     , binary               >=0.8.0   && <0.9
+                     , binary-strict        >=0.4.8   && <0.5
+                     , optparse-applicative >=0.12    && <=0.14
+                     , gitrev               >=1.0.0   && <=1.2.0
+                     , text                 >=1.2     && <1.3
+                     , time                 >=1.6     && <1.7
+                     , ansi-wl-pprint       >=0.6.7.0 && <0.7
                      , diagz
   default-language:    Haskell2010
 
