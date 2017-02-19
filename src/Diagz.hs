@@ -1,12 +1,27 @@
 {-# LANGUAGE OverloadedStrings#-}
 
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Diagz
+-- Copyright   : (c) 2017 Cristian Adrián Ontivero
+-- License     : BSD3
+-- Stability   : experimental
+-- Portability : unknown
+--
+-----------------------------------------------------------------------------
+
 module Diagz where
 
 import Data.Binary.Get (Get)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as C
 import Data.Monoid ((<>))
+import Data.Functor (($>))
+import Data.Maybe (isJust)
 import Data.Text (Text, pack)
 import Data.Word
+import Data.Bits (testBit)
 import Numeric (showHex)
 import qualified Data.Binary.Get as G
 import qualified Data.Binary.Strict.BitGet as BG
@@ -29,54 +44,67 @@ instance Pretty Header where
       "Header (10 bytes)" <$$> indent 2 (
       fill m (text t1) <> colon <+> text (show i1) <+> text (show i2) <$$>
       fill m (text t2) <> colon <+> cmethod cm <$$>
-      fill m (text t3) <> colon <+> hang 2 (text (show fs) <$$> pretty (G.runGet getFlags (BL.singleton fs))) <$$>
+      fill m (text t3) <> colon <+> (text (show fs) <$$> indent 4 (flagBreakdown fs)) <$$>
       fill m (text t4) <> colon <+> timeToDoc lm <$$>
       fill m (text t5) <> colon <+> eflags ef <$$>
-      fill m (text t6) <> colon <+> osToDoc os  <> linebreak)
+      fill m (text t6) <> colon <+> osToDoc os)
     where a@[t1,t2,t3,t4,t5,t6] = 
-                [ "Signature", "Compression Method", "Flags"
-                , "Last Modified", "Extra Flags", "Operating System"]
+                [ "Signature", "Compression Method", "Flag Byte Value"
+                , "Last Modified", "Extra Flags Value", "Operating System"]
           m = (maximum $ map length a) + 1
 
 instance Pretty Word8 where
   pretty x = text (show x)
 
--- | The 8 bits corresponding to the 'Header' flags (FLG in IRC 1952)
-data Flags = Flags { ftext :: Bool
-                   , fhcrc :: Bool
-                   , fextra :: Bool
-                   , fname :: Bool
-                   , fcomment :: Bool
-                   , r0x20 :: Bool
-                   , r0x40 :: Bool
-                   , r0x80 :: Bool
-                   } deriving (Show)
-instance Pretty Flags where
-  pretty (Flags ft fh fe fn fc r2 r4 r8) = 
-      align (fill m (text t1) <+> equals <+> bitToDoc ft
-        <$$> fill m (text t2) <+> equals <+> bitToDoc fh
-        <$$> fill m (text t3) <+> equals <+> bitToDoc fe
-        <$$> fill m (text t4) <+> equals <+> bitToDoc fn
-        <$$> fill m (text t5) <+> equals <+> bitToDoc fc)
-    where a@[t1,t2,t3,t4,t5] = ["FTEXT", "FHCRC", "FEXTRA" , "FNAME", "FCOMMENT"]
-          m = (maximum $ map length a) 
+flagBreakdown :: Word8 -> Doc
+flagBreakdown x = "Flag Breakdown" <+> colon <+>
+    align (fill m (text t0) <+> equals <+> bitToDoc (ftext x)
+      <$$> fill m (text t1) <+> equals <+> bitToDoc (fhcrc x)
+      <$$> fill m (text t2) <+> equals <+> bitToDoc (fextra x)
+      <$$> fill m (text t3) <+> equals <+> bitToDoc (fname x)
+      <$$> fill m (text t4) <+> equals <+> bitToDoc (fcomment x)
+      <$$> fill m (text t5) <+> equals <+> bitToDoc (r0x20 x)
+      <$$> fill m (text t6) <+> equals <+> bitToDoc (r0x40 x)
+      <$$> fill m (text t7) <+> equals <+> bitToDoc (r0x80 x))
+  where a@[t0,t1,t2,t3,t4,t5,t6,t7] =
+          [ "Bit 0 (FTEXT)", "Bit 1 (FHCRC)", "Bit 2 (FEXTRA)"
+          , "Bit 3 (FNAME)", "Bit 4 (FCOMMENT)", "Bit 5 (reserved)"
+          , "Bit 6 (reserved)", "Bit 7 (reserved)"
+          ]
+        m = (maximum $ map length a) 
 
 data FlgFextra = FlgFextra { xlen :: Word16
                            , xlenBytes :: ByteString
                            } deriving (Show)
 
-data OptionalHeader = OptionalHeader { flg_fextra  :: Maybe FlgFextra
-                                     , fileName    :: Maybe ByteString
-                                     , fileComment :: Maybe ByteString
-                                     , crc16       :: Maybe Word16
-                                     } deriving (Show)
-
 data Member = Member { header           :: Header
-                     , optionalHeader   :: OptionalHeader
+                     , flg_fextra       :: Maybe FlgFextra
+                     , fileName         :: Maybe ByteString
+                     , fileComment      :: Maybe ByteString
+                     , crc16            :: Maybe Word16
                      , compressedBlocks :: ByteString
+                     -- , deflateHeader    :: DeflateHeader
                      , crc32            :: Word32
                      , inputSize        :: Word32
                      } deriving (Show)
+instance Pretty Member where
+  pretty (Member h ffe fn fc crc_16 cb crc_32 isz) =
+      pretty h <$$> (if optionalHeaderIsPresent ffe fn fc crc_16
+                      then "Optional Header" <$$> indent 2 (prettyFileName)
+                      else mempty)
+    where prettyFileName = maybe mempty (\x -> "File name" <> colon <+> (text $ C.unpack x)) fn
+
+data DeflateHeader = DeflateHeader { bfinal :: Bool
+                                   , btype :: (Bool, Bool)
+                                   } deriving Show
+instance Pretty DeflateHeader where
+  pretty (DeflateHeader b1 (b2,b3)) = text (show b1) <+> text (show b2) <+> text (show b3)
+
+optionalHeaderIsPresent :: Maybe FlgFextra -> Maybe ByteString
+                        -> Maybe ByteString -> Maybe Word16 -> Bool
+optionalHeaderIsPresent a b c d
+    | isJust a || isJust b || isJust c || isJust d = True
+    | otherwise                                    = False
 
 data Footer = Footer { checksum :: Word32 -- Checksum (CRC-32)
                      , dataSize :: Word32 -- Uncompressed data size (in bytes).
@@ -105,9 +133,9 @@ cmethod 8 = text "DEFLATE" <+> parens (int 8)
 cmethod x = text "Reserved" <+> parens (text (show x))
 
 eflags :: Word8 -> Doc
-eflags 2 = "Maximum compression, slowest algorithm" <+> parens (int 2)
-eflags 4 = "Fastest algorithm" <+> parens (int 4)
-eflags x = "Undefined" <+> parens (int $ fromIntegral x)
+eflags 2 = int 2 <+> parens "Maximum compression, slowest algorithm"
+eflags 4 = int 4 <+> parens "Fastest algorithm"
+eflags x = (int $ fromIntegral x) <+> parens "Undefined"
 
 {-
 Value	Identifier	Description
@@ -122,40 +150,41 @@ This flag hints end-of-line conversion for cross-platform text files but does no
 0x80		Reserved
 -}
 
-flgs :: Word8 -> Text
-flgs 0x01 = "FTEXT If set the uncompressed data needs to be treated as text instead of binary data."
-flgs 0x02 = "FHCRC The file contains a header checksum (CRC-16)"
-flgs 0x04 = "FEXTRA The file contains extra fields"
-flgs 0x08 = "FNAME The file contains an original file name string"
-flgs 0x10 = "FCOMMENT The file contains comment"
-flgs 0x20 = "Reserved (0x20)"
-flgs 0x40 = "Reserved (0x40)"
-flgs 0x80 = "Reserved (0x80)"
-
-getFlags :: Get Flags
-getFlags = do
-    flg <- G.getByteString 1
-    -- The monad gets bits from left to right, so the fields are backwards.
-    let x = BG.runBitGet flg $ do
-            r0x80'    <- BG.getBit
-            r0x40'    <- BG.getBit
-            r0x20'    <- BG.getBit
-            fcomment' <- BG.getBit
-            fname'    <- BG.getBit
-            fextra'   <- BG.getBit
-            fhcrc'    <- BG.getBit
-            ftext'    <- BG.getBit
-            pure $ Flags ftext' fhcrc' fextra' fname' fcomment' r0x20' r0x40' r0x80'
-    case x of
-      Left error -> fail error
-      Right r -> return r
-
--- TODO: Make it a Get Member, with all it entails.
-deserializeMember :: Get (Header, ByteString)
+deserializeMember :: Get Member
 deserializeMember = do
     h  <- deserializeHeader
-    fn <- getFileName
-    pure $ (h, fn)
+    if compressionMethod h /= 8
+       then error "Unkown compression method, aborting."
+       else do fe <- if fextra (flags h)
+                        then Just <$> getFlgFextra
+                        else pure Nothing
+               fn <- if fname (flags h)
+                        then getNullTerminatedString  
+                        else pure Nothing
+               fc <- if fcomment (flags h)
+                        then getNullTerminatedString
+                        else pure Nothing
+               pure $ Member h fe fn fc (Just 0) (B.empty) 0 0
+
+deserializeDeflateHeader :: Get DeflateHeader
+deserializeDeflateHeader = do
+    G.skip 18
+    x <- G.getByteString 1
+    let y = BG.runBitGet x $ do
+            b0 <- BG.getBit
+            b1 <- BG.getBit
+            b2 <- BG.getBit
+            pure $ DeflateHeader b0 (b1,b2)
+    case y of
+      Right a -> pure a
+      Left err -> fail err
+    
+
+
+getNullTerminatedString :: Get (Maybe ByteString)
+getNullTerminatedString = do
+ x <- G.getLazyByteStringNul
+ pure . Just $ BL.toStrict x
 
 deserializeHeader :: Get Header
 deserializeHeader = do  
@@ -166,7 +195,9 @@ deserializeHeader = do
     lm  <- G.getWord32le
     efg <- G.getWord8
     o   <- G.getWord8
-    pure $ Header i1 i2 cm flg lm efg o
+    if signatureIsValid i1 i2
+       then pure $ Header i1 i2 cm flg lm efg o
+       else error "Invalid gzip signature. Aborting."
 
 getFlgFextra :: Get FlgFextra
 getFlgFextra = do
@@ -174,16 +205,8 @@ getFlgFextra = do
     xlb <- G.getByteString (fromIntegral xl)
     pure $ FlgFextra xl xlb
 
-getFileName :: Get ByteString
-getFileName = do
-    fn <- G.getLazyByteStringNul
-    pure $ BL.toStrict fn
-
--- flgfextra (Header _ _ _ flg _ _ _) = 
-  -- where flgfextra' (Flags _ _ _ 
-
-signatureIsCorrect :: Word8 -> Word8 -> Bool
-signatureIsCorrect i1 i2 = i1 == 31 && i2 == 139
+signatureIsValid :: Word8 -> Word8 -> Bool
+signatureIsValid = \i1 i2 -> i1 == 31 && i2 == 139
 
 timeToDoc :: Word32 -> Doc
 timeToDoc x = text . show $ posixSecondsToUTCTime posixSecs
@@ -193,3 +216,27 @@ timeToDoc x = text . show $ posixSecondsToUTCTime posixSecs
 bitToDoc :: Bool -> Doc
 bitToDoc False = int 0
 bitToDoc True  = int 1
+
+ftext :: Word8 -> Bool
+ftext = flip testBit 0
+
+fhcrc :: Word8 -> Bool
+fhcrc = flip testBit 1
+
+fextra :: Word8 -> Bool
+fextra = flip testBit 2
+
+fname :: Word8 -> Bool
+fname = flip testBit 3
+
+fcomment :: Word8 -> Bool
+fcomment = flip testBit 4
+
+r0x20 :: Word8 -> Bool
+r0x20 = flip testBit 5
+
+r0x40 :: Word8 -> Bool
+r0x40 = flip testBit 6 
+
+r0x80 :: Word8 -> Bool
+r0x80 = flip testBit 7

@@ -38,11 +38,16 @@ main :: IO ()
 main = do
     cmds  <- execParser instructions
     input <- BL.readFile (filePath cmds)
-    def input
+    memb input
 
+-- member
+memb :: BL.ByteString -> IO ()
+memb input = do
+    let m = G.runGet deserializeMember input
+    putDoc $ pretty m <> linebreak
+
+-- deflate
 def :: BL.ByteString -> IO ()
 def input = do
-    let (h,r) = G.runGet deserializeMember input
-    putDoc $ pretty h <> linebreak
-    print r
-
+    let m = G.runGet deserializeDeflateHeader input
+    putDoc $ pretty m <> linebreak
