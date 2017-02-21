@@ -45,9 +45,3 @@ memb :: BL.ByteString -> IO ()
 memb input = do
     let m = G.runGet deserializeMember input
     putDoc $ pretty m <> linebreak
-
--- deflate
-def :: BL.ByteString -> IO ()
-def input = do
-    let m = G.runGet deserializeDeflateHeader input
-    putDoc $ pretty m <> linebreak

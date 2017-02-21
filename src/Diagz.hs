@@ -12,6 +12,7 @@
 
 module Diagz where
 
+import Control.Applicative ((<**>))
 import Data.Binary.Get (Get)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
@@ -82,23 +83,48 @@ data Member = Member { header           :: Header
                      , fileName         :: Maybe ByteString
                      , fileComment      :: Maybe ByteString
                      , crc16            :: Maybe Word16
-                     , compressedBlocks :: ByteString
-                     -- , deflateHeader    :: DeflateHeader
+                     -- , compressedBlocks :: ByteString
+                     , deflateHeader    :: DeflateHeader
                      , crc32            :: Word32
                      , inputSize        :: Word32
                      } deriving (Show)
 instance Pretty Member where
-  pretty (Member h ffe fn fc crc_16 cb crc_32 isz) =
+  pretty (Member h ffe fn fc crc_16 dh crc_32 isz) =
       pretty h <$$> (if optionalHeaderIsPresent ffe fn fc crc_16
                       then "Optional Header" <$$> indent 2 (prettyFileName)
-                      else mempty)
+                      else mempty) <$$>
+      "CRC16" <> colon <+> text (show crc_16) <$$>
+      pretty dh
     where prettyFileName = maybe mempty (\x -> "File name" <> colon <+> (text $ C.unpack x)) fn
 
-data DeflateHeader = DeflateHeader { bfinal :: Bool
-                                   , btype :: (Bool, Bool)
+data DeflateHeader = DeflateHeader { bfinal :: Bfinal
+                                   , btype  :: Btype
                                    } deriving Show
+data Bfinal = NotLastBlock | LastBlock
+  deriving Show
+instance Pretty Bfinal where
+  pretty NotLastBlock = "0 (Not the last block of the data set)"
+  pretty LastBlock    = "1 (Last block of the data set)"
+
+data Btype = NoCompression
+           | FixedHuffman
+           | DynamicHuffman
+           | Reserved
+  deriving Show
+instance Pretty Btype where
+  pretty NoCompression  = "00 (No compression)"
+  pretty FixedHuffman   = "01 (Compressed with fixed huffman codes)"
+  pretty DynamicHuffman = "10 (Compressed with dynamic huffman codes)"
+  pretty Reserved       = "11 (Reserved; error)"
+
 instance Pretty DeflateHeader where
-  pretty (DeflateHeader b1 (b2,b3)) = text (show b1) <+> text (show b2) <+> text (show b3)
+  pretty (DeflateHeader bf bt) =
+      "Deflate Header" <$$> indent 2 (align (
+        fill m (text t0) <> colon <+> pretty bf <$$> 
+        fill m (text t1) <> colon <+> pretty bt))
+    where a@[t0,t1] =
+            [ "Final Block (BFINAL)", "Block Type (BTYPE)"]
+          m = (maximum $ map length a) + 1
 
 optionalHeaderIsPresent :: Maybe FlgFextra -> Maybe ByteString
                         -> Maybe ByteString -> Maybe Word16 -> Bool
@@ -155,31 +181,37 @@ deserializeMember = do
     h  <- deserializeHeader
     if compressionMethod h /= 8
        then error "Unkown compression method, aborting."
-       else do fe <- if fextra (flags h)
+       else do let flgs = flags h
+               fe <- if fextra flgs
                         then Just <$> getFlgFextra
                         else pure Nothing
-               fn <- if fname (flags h)
+               fn <- if fname flgs
                         then getNullTerminatedString  
                         else pure Nothing
-               fc <- if fcomment (flags h)
+               fc <- if fcomment flgs
                         then getNullTerminatedString
                         else pure Nothing
-               pure $ Member h fe fn fc (Just 0) (B.empty) 0 0
+               c  <- if fhcrc flgs
+                        then Just <$> G.getWord16le
+                        else pure Nothing
+               dh <- deserializeDeflateHeader
+               pure $ Member h fe fn fc c dh 0 0
 
 deserializeDeflateHeader :: Get DeflateHeader
 deserializeDeflateHeader = do
-    G.skip 18
     x <- G.getByteString 1
     let y = BG.runBitGet x $ do
-            b0 <- BG.getBit
+            b0 <- BG.getBit <**> pure (\x -> if x then LastBlock else NotLastBlock)
             b1 <- BG.getBit
             b2 <- BG.getBit
-            pure $ DeflateHeader b0 (b1,b2)
+            pure $ DeflateHeader b0 (mkBtype b2 b1)
     case y of
       Right a -> pure a
       Left err -> fail err
-    
-
+  where mkBtype False False = NoCompression
+        mkBtype False True  = FixedHuffman
+        mkBtype True False  = DynamicHuffman
+        mkBtype True True   = Reserved
 
 getNullTerminatedString :: Get (Maybe ByteString)
 getNullTerminatedString = do
@@ -209,6 +241,7 @@ signatureIsValid :: Word8 -> Word8 -> Bool
 signatureIsValid = \i1 i2 -> i1 == 31 && i2 == 139
 
 timeToDoc :: Word32 -> Doc
+timeToDoc 0 = "No time stamp available (0)"
 timeToDoc x = text . show $ posixSecondsToUTCTime posixSecs
   where posixSecs :: NominalDiffTime
         posixSecs = fromRational . toRational . secondsToDiffTime $ toInteger x 

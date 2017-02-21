@@ -1,7 +1,8 @@
 name:                diagz
-version:             0.1
+version:             0.2.0
 synopsis:            "Diagnostics for gzip"
--- description:
+description:
+    A program to analyze gzip files.
 homepage:            https://github.com/contivero/diagz#readme
 license:             BSD3
 license-file:        LICENSE
@@ -16,7 +17,7 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Diagz
-  build-depends:       base           >=4.7     && < 5
+  build-depends:       base           >=4.7     && <5
                      , bytestring     >=0.10.0  && <0.11
                      , binary         >=0.8.0   && <0.9
                      , binary-strict  >=0.4.8   && <0.5
